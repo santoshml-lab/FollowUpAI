@@ -21,8 +21,12 @@ from database import (
 
 from models import (
     Client,
-    FollowUp
+    FollowUp,
+    CallLog
 )
+    
+    
+
 
 
 # =========================================================
@@ -570,5 +574,122 @@ def test_voice_call(
             "script": script
         }
     }
+
+# =========================================================
+# CREATE CALL LOG
+# =========================================================
+
+@app.post("/followups/{followup_id}/call-log")
+def create_call_log(
+    followup_id: int,
+    db: Session = Depends(get_db)
+):
+
+    # -----------------------------------------------------
+    # FIND FOLLOW-UP
+    # -----------------------------------------------------
+
+    followup = db.query(
+        FollowUp
+    ).filter(
+        FollowUp.id == followup_id
+    ).first()
+
+    if not followup:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Follow-up not found."
+        )
+
+    # -----------------------------------------------------
+    # FIND CLIENT
+    # -----------------------------------------------------
+
+    client = db.query(
+        Client
+    ).filter(
+        Client.id == followup.client_id
+    ).first()
+
+    if not client:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found."
+        )
+
+    # -----------------------------------------------------
+    # CREATE LOG
+    # -----------------------------------------------------
+
+    call_log = CallLog(
+        followup_id=followup.id,
+        phone=client.phone,
+        status="queued",
+        outcome=None
+    )
+
+    db.add(call_log)
+    db.commit()
+    db.refresh(call_log)
+
+    return {
+        "status": "success",
+        "message": "Call queued in test mode.",
+        "call_log": {
+            "id": call_log.id,
+            "followup_id": call_log.followup_id,
+            "phone": call_log.phone,
+            "status": call_log.status,
+            "outcome": call_log.outcome,
+            "created_at": call_log.created_at
+        }
+    }
+
+# =========================================================
+# UPDATE CALL STATUS
+# =========================================================
+
+@app.patch("/call-logs/{call_log_id}")
+def update_call_log(
+    call_log_id: int,
+    status: str,
+    outcome: str | None = None,
+    db: Session = Depends(get_db)
+):
+
+    call_log = db.query(
+        CallLog
+    ).filter(
+        CallLog.id == call_log_id
+    ).first()
+
+    if not call_log:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Call log not found."
+        )
+
+    call_log.status = status
+
+    if outcome is not None:
+        call_log.outcome = outcome
+
+    db.commit()
+    db.refresh(call_log)
+
+    return {
+        "status": "success",
+        "call_log": {
+            "id": call_log.id,
+            "followup_id": call_log.followup_id,
+            "phone": call_log.phone,
+            "status": call_log.status,
+            "outcome": call_log.outcome
+        }
+    }
+    
     
     
