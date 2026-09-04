@@ -188,4 +188,100 @@ def get_followups(
     ).all()
 
     return followups
+
+# =========================================================
+# PROCESS DUE FOLLOW-UPS
+# =========================================================
+
+@app.post("/followups/process")
+def process_followups(
+    db: Session = Depends(get_db)
+):
+
+    # -----------------------------------------------------
+    # CURRENT TIME
+    # -----------------------------------------------------
+
+    now = datetime.now()
+
+    # -----------------------------------------------------
+    # FIND DUE FOLLOW-UPS
+    # -----------------------------------------------------
+
+    due_followups = db.query(
+        FollowUp
+    ).filter(
+        FollowUp.status == "scheduled",
+        FollowUp.scheduled_at <= now
+    ).all()
+
+    processed = []
+
+    # -----------------------------------------------------
+    # PROCESS FOLLOW-UPS
+    # -----------------------------------------------------
+
+    for followup in due_followups:
+
+        client = db.query(
+            Client
+        ).filter(
+            Client.id == followup.client_id
+        ).first()
+
+        # Change status
+
+        followup.status = "processed"
+
+        processed.append(
+            {
+                "followup_id": followup.id,
+
+                "client_id": followup.client_id,
+
+                "client_name": (
+                    client.name
+                    if client
+                    else None
+                ),
+
+                "phone": (
+                    client.phone
+                    if client
+                    else None
+                ),
+
+                "product": (
+                    client.product
+                    if client
+                    else None
+                ),
+
+                "scheduled_at": (
+                    followup.scheduled_at
+                ),
+
+                "status": followup.status
+            }
+        )
+
+    # -----------------------------------------------------
+    # SAVE
+    # -----------------------------------------------------
+
+    db.commit()
+
+    # -----------------------------------------------------
+    # RESPONSE
+    # -----------------------------------------------------
+
+    return {
+        "status": "success",
+
+        "processed_count": len(
+            processed
+        ),
+
+        "processed_followups": processed
+    }
     
