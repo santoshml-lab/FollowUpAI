@@ -188,3 +188,4 @@ def get_followups(
     ).all()
 
     return followups
+    
