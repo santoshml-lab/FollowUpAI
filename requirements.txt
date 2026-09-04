@@ -5,3 +5,4 @@ pydantic
 python-multipart
 groq
 APScheduler
+psycopg2-binary
