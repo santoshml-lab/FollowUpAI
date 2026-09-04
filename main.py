@@ -1,3 +1,12 @@
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException
+)
+
+
+
 from datetime import datetime, timedelta
 import os
 
@@ -121,6 +130,17 @@ app = FastAPI(
     description="AI-powered automated follow-up system",
     version="1.2.0",
     lifespan=lifespan
+)
+# =========================================================
+# CORS
+# =========================================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
