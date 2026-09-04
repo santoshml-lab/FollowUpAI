@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 from fastapi import (
@@ -705,6 +705,86 @@ def get_call_logs(
     ).all()
 
     return call_logs
+
+@app.post("/followups/auto-schedule/{client_id}")
+def auto_schedule_followup(
+    client_id: int,
+    db: Session = Depends(get_db)
+):
+
+    # -----------------------------------------------------
+    # FIND CLIENT
+    # -----------------------------------------------------
+
+    client = db.query(
+        Client
+    ).filter(
+        Client.id == client_id
+    ).first()
+
+    if not client:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found."
+        )
+
+    # -----------------------------------------------------
+    # CHECK EXISTING SCHEDULED FOLLOW-UP
+    # -----------------------------------------------------
+
+    existing = db.query(
+        FollowUp
+    ).filter(
+        FollowUp.client_id == client_id,
+        FollowUp.status == "scheduled"
+    ).first()
+
+    if existing:
+
+        return {
+            "status": "already_scheduled",
+            "message": "Client already has a scheduled follow-up.",
+            "followup": {
+                "id": existing.id,
+                "client_id": existing.client_id,
+                "scheduled_at": existing.scheduled_at,
+                "status": existing.status
+            }
+        }
+
+    # -----------------------------------------------------
+    # CREATE NEXT FOLLOW-UP
+    # -----------------------------------------------------
+
+    scheduled_time = datetime.now() + timedelta(days=1)
+
+    followup = FollowUp(
+        client_id=client_id,
+        scheduled_at=scheduled_time,
+        status="scheduled"
+    )
+
+    db.add(followup)
+    db.commit()
+    db.refresh(followup)
+
+    # -----------------------------------------------------
+    # RESPONSE
+    # -----------------------------------------------------
+
+    return {
+        "status": "success",
+        "message": "Follow-up automatically scheduled.",
+        "followup": {
+            "id": followup.id,
+            "client_id": followup.client_id,
+            "client_name": client.name,
+            "product": client.product,
+            "scheduled_at": followup.scheduled_at,
+            "status": followup.status
+        }
+    }
     
     
     
