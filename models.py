@@ -86,3 +86,48 @@ class FollowUp(Base):
         "Client",
         back_populates="followups"
     )
+
+# =========================================================
+# CALL LOG MODEL
+# =========================================================
+
+class CallLog(Base):
+
+    __tablename__ = "call_logs"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    followup_id = Column(
+        Integer,
+        ForeignKey("followups.id"),
+        nullable=False
+    )
+
+    phone = Column(
+        String,
+        nullable=False
+    )
+
+    status = Column(
+        String,
+        default="queued"
+    )
+
+    outcome = Column(
+        String,
+        nullable=True
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    followup = relationship(
+        "FollowUp"
+    )
+    
