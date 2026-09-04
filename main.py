@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 import os
 
+from contextlib import asynccontextmanager
+
 from fastapi import (
     FastAPI,
     Depends,
@@ -13,10 +15,13 @@ from sqlalchemy.orm import Session
 
 from groq import Groq
 
+from apscheduler.schedulers.background import BackgroundScheduler
+
 from database import (
     Base,
     engine,
-    get_db
+    get_db,
+    SessionLocal
 )
 
 from models import (
@@ -24,9 +29,87 @@ from models import (
     FollowUp,
     CallLog
 )
-    
-    
 
+
+# =========================================================
+# AUTOMATIC FOLLOW-UP SCHEDULER
+# =========================================================
+
+scheduler = BackgroundScheduler()
+
+
+def automatic_followup_check():
+
+    db = SessionLocal()
+
+    try:
+
+        now = datetime.now()
+
+        due_followups = db.query(
+            FollowUp
+        ).filter(
+            FollowUp.status == "scheduled",
+            FollowUp.scheduled_at <= now
+        ).all()
+
+        for followup in due_followups:
+
+            client = db.query(
+                Client
+            ).filter(
+                Client.id == followup.client_id
+            ).first()
+
+            if not client:
+                continue
+
+            # -------------------------------------------------
+            # PROCESS FOLLOW-UP
+            # -------------------------------------------------
+
+            followup.status = "processed"
+
+            print(
+                f"Follow-up processed: "
+                f"{followup.id} - {client.name}"
+            )
+
+        db.commit()
+
+    except Exception as error:
+
+        print(
+            f"Scheduler error: {error}"
+        )
+
+        db.rollback()
+
+    finally:
+
+        db.close()
+
+
+# =========================================================
+# APP LIFESPAN
+# =========================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    scheduler.start()
+
+    print(
+        "FollowUpAI scheduler started 🚀"
+    )
+
+    yield
+
+    scheduler.shutdown()
+
+    print(
+        "FollowUpAI scheduler stopped."
+    )
 
 
 # =========================================================
@@ -36,7 +119,8 @@ from models import (
 app = FastAPI(
     title="FollowUpAI",
     description="AI-powered automated follow-up system",
-    version="1.1.0"
+    version="1.2.0",
+    lifespan=lifespan
 )
 
 
@@ -63,6 +147,19 @@ groq_client = Groq(
 
 Base.metadata.create_all(
     bind=engine
+)
+
+
+# =========================================================
+# SCHEDULER JOB
+# =========================================================
+
+scheduler.add_job(
+    automatic_followup_check,
+    "interval",
+    seconds=60,
+    id="followup_checker",
+    replace_existing=True
 )
 
 
@@ -306,10 +403,6 @@ def generate_script(
     db: Session = Depends(get_db)
 ):
 
-    # -----------------------------------------------------
-    # FIND FOLLOW-UP
-    # -----------------------------------------------------
-
     followup = db.query(
         FollowUp
     ).filter(
@@ -322,10 +415,6 @@ def generate_script(
             status_code=404,
             detail="Follow-up not found."
         )
-
-    # -----------------------------------------------------
-    # FIND CLIENT
-    # -----------------------------------------------------
 
     client = db.query(
         Client
@@ -340,10 +429,6 @@ def generate_script(
             detail="Client not found."
         )
 
-    # -----------------------------------------------------
-    # GENERATE SCRIPT
-    # -----------------------------------------------------
-
     try:
 
         script = generate_followup_script(
@@ -356,10 +441,6 @@ def generate_script(
             status_code=500,
             detail=str(error)
         )
-
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
 
     return {
 
@@ -389,15 +470,7 @@ def process_followups(
     db: Session = Depends(get_db)
 ):
 
-    # -----------------------------------------------------
-    # CURRENT TIME
-    # -----------------------------------------------------
-
     now = datetime.now()
-
-    # -----------------------------------------------------
-    # FIND DUE FOLLOW-UPS
-    # -----------------------------------------------------
 
     due_followups = db.query(
         FollowUp
@@ -408,10 +481,6 @@ def process_followups(
 
     processed = []
 
-    # -----------------------------------------------------
-    # PROCESS FOLLOW-UPS
-    # -----------------------------------------------------
-
     for followup in due_followups:
 
         client = db.query(
@@ -420,15 +489,7 @@ def process_followups(
             Client.id == followup.client_id
         ).first()
 
-        # -------------------------------------------------
-        # UPDATE STATUS
-        # -------------------------------------------------
-
         followup.status = "processed"
-
-        # -------------------------------------------------
-        # STORE RESULT
-        # -------------------------------------------------
 
         processed.append(
             {
@@ -462,15 +523,7 @@ def process_followups(
             }
         )
 
-    # -----------------------------------------------------
-    # SAVE DATABASE
-    # -----------------------------------------------------
-
     db.commit()
-
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
 
     return {
 
@@ -483,6 +536,7 @@ def process_followups(
         "processed_followups": processed
     }
 
+
 # =========================================================
 # TEST VOICE CALL - DRY RUN
 # =========================================================
@@ -492,10 +546,6 @@ def test_voice_call(
     followup_id: int,
     db: Session = Depends(get_db)
 ):
-
-    # -----------------------------------------------------
-    # FIND FOLLOW-UP
-    # -----------------------------------------------------
 
     followup = db.query(
         FollowUp
@@ -510,10 +560,6 @@ def test_voice_call(
             detail="Follow-up not found."
         )
 
-    # -----------------------------------------------------
-    # FIND CLIENT
-    # -----------------------------------------------------
-
     client = db.query(
         Client
     ).filter(
@@ -527,10 +573,6 @@ def test_voice_call(
             detail="Client not found."
         )
 
-    # -----------------------------------------------------
-    # GENERATE AI SCRIPT
-    # -----------------------------------------------------
-
     try:
 
         script = generate_followup_script(
@@ -543,10 +585,6 @@ def test_voice_call(
             status_code=500,
             detail=str(error)
         )
-
-    # -----------------------------------------------------
-    # DRY-RUN RESPONSE
-    # -----------------------------------------------------
 
     return {
 
@@ -575,6 +613,7 @@ def test_voice_call(
         }
     }
 
+
 # =========================================================
 # CREATE CALL LOG
 # =========================================================
@@ -584,10 +623,6 @@ def create_call_log(
     followup_id: int,
     db: Session = Depends(get_db)
 ):
-
-    # -----------------------------------------------------
-    # FIND FOLLOW-UP
-    # -----------------------------------------------------
 
     followup = db.query(
         FollowUp
@@ -602,10 +637,6 @@ def create_call_log(
             detail="Follow-up not found."
         )
 
-    # -----------------------------------------------------
-    # FIND CLIENT
-    # -----------------------------------------------------
-
     client = db.query(
         Client
     ).filter(
@@ -619,10 +650,6 @@ def create_call_log(
             detail="Client not found."
         )
 
-    # -----------------------------------------------------
-    # CREATE LOG
-    # -----------------------------------------------------
-
     call_log = CallLog(
         followup_id=followup.id,
         phone=client.phone,
@@ -631,21 +658,33 @@ def create_call_log(
     )
 
     db.add(call_log)
+
     db.commit()
+
     db.refresh(call_log)
 
     return {
+
         "status": "success",
+
         "message": "Call queued in test mode.",
+
         "call_log": {
+
             "id": call_log.id,
+
             "followup_id": call_log.followup_id,
+
             "phone": call_log.phone,
+
             "status": call_log.status,
+
             "outcome": call_log.outcome,
+
             "created_at": call_log.created_at
         }
     }
+
 
 # =========================================================
 # UPDATE CALL STATUS
@@ -675,21 +714,31 @@ def update_call_log(
     call_log.status = status
 
     if outcome is not None:
+
         call_log.outcome = outcome
 
     db.commit()
+
     db.refresh(call_log)
 
     return {
+
         "status": "success",
+
         "call_log": {
+
             "id": call_log.id,
+
             "followup_id": call_log.followup_id,
+
             "phone": call_log.phone,
+
             "status": call_log.status,
+
             "outcome": call_log.outcome
         }
     }
+
 
 # =========================================================
 # GET CALL LOGS
@@ -706,15 +755,18 @@ def get_call_logs(
 
     return call_logs
 
-@app.post("/followups/auto-schedule/{client_id}")
+
+# =========================================================
+# AUTO SCHEDULE FOLLOW-UP
+# =========================================================
+
+@app.post(
+    "/followups/auto-schedule/{client_id}"
+)
 def auto_schedule_followup(
     client_id: int,
     db: Session = Depends(get_db)
 ):
-
-    # -----------------------------------------------------
-    # FIND CLIENT
-    # -----------------------------------------------------
 
     client = db.query(
         Client
@@ -729,10 +781,6 @@ def auto_schedule_followup(
             detail="Client not found."
         )
 
-    # -----------------------------------------------------
-    # CHECK EXISTING SCHEDULED FOLLOW-UP
-    # -----------------------------------------------------
-
     existing = db.query(
         FollowUp
     ).filter(
@@ -743,21 +791,32 @@ def auto_schedule_followup(
     if existing:
 
         return {
+
             "status": "already_scheduled",
-            "message": "Client already has a scheduled follow-up.",
+
+            "message": (
+                "Client already has a "
+                "scheduled follow-up."
+            ),
+
             "followup": {
+
                 "id": existing.id,
+
                 "client_id": existing.client_id,
-                "scheduled_at": existing.scheduled_at,
+
+                "scheduled_at": (
+                    existing.scheduled_at
+                ),
+
                 "status": existing.status
             }
         }
 
-    # -----------------------------------------------------
-    # CREATE NEXT FOLLOW-UP
-    # -----------------------------------------------------
-
-    scheduled_time = datetime.now() + timedelta(days=1)
+    scheduled_time = (
+        datetime.now()
+        + timedelta(days=1)
+    )
 
     followup = FollowUp(
         client_id=client_id,
@@ -766,22 +825,33 @@ def auto_schedule_followup(
     )
 
     db.add(followup)
+
     db.commit()
+
     db.refresh(followup)
 
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
-
     return {
+
         "status": "success",
-        "message": "Follow-up automatically scheduled.",
+
+        "message": (
+            "Follow-up automatically scheduled."
+        ),
+
         "followup": {
+
             "id": followup.id,
+
             "client_id": followup.client_id,
+
             "client_name": client.name,
+
             "product": client.product,
-            "scheduled_at": followup.scheduled_at,
+
+            "scheduled_at": (
+                followup.scheduled_at
+            ),
+
             "status": followup.status
         }
     }
