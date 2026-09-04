@@ -1,36 +1,23 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
-# =========================================================
-# DATABASE
-# =========================================================
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-DATABASE_URL = "sqlite:///./followupai.db"
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set."
+    )
 
-
-# =========================================================
-# ENGINE
-# =========================================================
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={
-        "check_same_thread": False
-    }
+    pool_pre_ping=True
 )
 
-
-# =========================================================
-# BASE
-# =========================================================
-
 Base = declarative_base()
-
-
-# =========================================================
-# SESSION
-# =========================================================
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -39,18 +26,11 @@ SessionLocal = sessionmaker(
 )
 
 
-# =========================================================
-# DATABASE DEPENDENCY
-# =========================================================
-
 def get_db():
 
     db = SessionLocal()
 
     try:
-
         yield db
-
     finally:
-
         db.close()
