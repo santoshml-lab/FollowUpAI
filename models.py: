@@ -1,13 +1,21 @@
+from datetime import datetime
+
 from sqlalchemy import (
     Column,
     Integer,
     String,
     DateTime,
-    Text
+    ForeignKey
 )
+
+from sqlalchemy.orm import relationship
 
 from database import Base
 
+
+# =========================================================
+# CLIENT MODEL
+# =========================================================
 
 class Client(Base):
 
@@ -35,10 +43,20 @@ class Client(Base):
     )
 
     notes = Column(
-        Text,
+        String,
         nullable=True
     )
 
+    followups = relationship(
+        "FollowUp",
+        back_populates="client",
+        cascade="all, delete-orphan"
+    )
+
+
+# =========================================================
+# FOLLOW-UP MODEL
+# =========================================================
 
 class FollowUp(Base):
 
@@ -52,6 +70,7 @@ class FollowUp(Base):
 
     client_id = Column(
         Integer,
+        ForeignKey("clients.id"),
         nullable=False
     )
 
@@ -65,7 +84,7 @@ class FollowUp(Base):
         default="scheduled"
     )
 
-    outcome = Column(
-        Text,
-        nullable=True
+    client = relationship(
+        "Client",
+        back_populates="followups"
     )
