@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import (
     Column,
     Integer,
@@ -9,6 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from database import Base
+
 
 
 # =========================================================
