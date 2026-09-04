@@ -690,6 +690,21 @@ def update_call_log(
             "outcome": call_log.outcome
         }
     }
+
+# =========================================================
+# GET CALL LOGS
+# =========================================================
+
+@app.get("/call-logs")
+def get_call_logs(
+    db: Session = Depends(get_db)
+):
+
+    call_logs = db.query(
+        CallLog
+    ).all()
+
+    return call_logs
     
     
     
