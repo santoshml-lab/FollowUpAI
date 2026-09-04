@@ -1,294 +1,88 @@
-from datetime import datetime, timezone
-
-from fastapi import (
-    FastAPI,
-    Depends,
-    HTTPException
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    ForeignKey
 )
 
-from pydantic import BaseModel
+from sqlalchemy.orm import relationship
 
-from sqlalchemy.orm import Session
-
-from database import (
-    Base,
-    engine,
-    get_db
-)
-
-from models import (
-    Client,
-    FollowUp
-)
+from database import Base
 
 
 # =========================================================
-# APP
+# CLIENT MODEL
 # =========================================================
 
-app = FastAPI(
-    title="FollowUpAI",
-    description="AI-powered automated follow-up system",
-    version="1.1.0"
-)
+class Client(Base):
 
+    __tablename__ = "clients"
 
-# =========================================================
-# CREATE DATABASE TABLES
-# =========================================================
-
-Base.metadata.create_all(
-    bind=engine
-)
-
-
-# =========================================================
-# REQUEST MODELS
-# =========================================================
-
-class ClientCreate(BaseModel):
-
-    name: str
-
-    phone: str
-
-    product: str | None = None
-
-    notes: str | None = None
-
-
-class FollowUpCreate(BaseModel):
-
-    client_id: int
-
-    scheduled_at: datetime
-
-
-# =========================================================
-# ROOT
-# =========================================================
-
-@app.get("/")
-def root():
-
-    return {
-        "message": "FollowUpAI API is running 🚀"
-    }
-
-
-# =========================================================
-# CREATE CLIENT
-# =========================================================
-
-@app.post("/clients")
-def create_client(
-    request: ClientCreate,
-    db: Session = Depends(get_db)
-):
-
-    client = Client(
-        name=request.name,
-        phone=request.phone,
-        product=request.product,
-        notes=request.notes
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
     )
 
-    db.add(client)
-
-    db.commit()
-
-    db.refresh(client)
-
-    return {
-        "status": "success",
-
-        "client": {
-            "id": client.id,
-            "name": client.name,
-            "phone": client.phone,
-            "product": client.product,
-            "notes": client.notes
-        }
-    }
-
-
-# =========================================================
-# GET CLIENTS
-# =========================================================
-
-@app.get("/clients")
-def get_clients(
-    db: Session = Depends(get_db)
-):
-
-    clients = db.query(
-        Client
-    ).all()
-
-    return clients
-
-
-# =========================================================
-# CREATE FOLLOW-UP
-# =========================================================
-
-@app.post("/followups")
-def create_followup(
-    request: FollowUpCreate,
-    db: Session = Depends(get_db)
-):
-
-    client = db.query(
-        Client
-    ).filter(
-        Client.id == request.client_id
-    ).first()
-
-    if not client:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Client not found."
-        )
-
-    followup = FollowUp(
-        client_id=request.client_id,
-        scheduled_at=request.scheduled_at,
-        status="scheduled"
+    name = Column(
+        String,
+        nullable=False
     )
 
-    db.add(followup)
-
-    db.commit()
-
-    db.refresh(followup)
-
-    return {
-        "status": "success",
-
-        "followup": {
-            "id": followup.id,
-            "client_id": followup.client_id,
-            "scheduled_at": followup.scheduled_at,
-            "status": followup.status
-        }
-    }
-
-
-# =========================================================
-# GET FOLLOW-UPS
-# =========================================================
-
-@app.get("/followups")
-def get_followups(
-    db: Session = Depends(get_db)
-):
-
-    followups = db.query(
-        FollowUp
-    ).all()
-
-    return followups
-
-
-# =========================================================
-# PROCESS DUE FOLLOW-UPS
-# =========================================================
-
-@app.post("/followups/process")
-def process_followups(
-    db: Session = Depends(get_db)
-):
-
-    # -----------------------------------------------------
-    # CURRENT UTC TIME
-    # -----------------------------------------------------
-
-    now = datetime.now(
-        timezone.utc
-    ).replace(
-        tzinfo=None
+    phone = Column(
+        String,
+        nullable=False
     )
 
-    # -----------------------------------------------------
-    # FIND DUE FOLLOW-UPS
-    # -----------------------------------------------------
+    product = Column(
+        String,
+        nullable=True
+    )
 
-    due_followups = db.query(
-        FollowUp
-    ).filter(
-        FollowUp.status == "scheduled",
-        FollowUp.scheduled_at <= now
-    ).all()
+    notes = Column(
+        String,
+        nullable=True
+    )
 
-    processed = []
+    followups = relationship(
+        "FollowUp",
+        back_populates="client",
+        cascade="all, delete-orphan"
+    )
 
-    # -----------------------------------------------------
-    # PROCESS EACH FOLLOW-UP
-    # -----------------------------------------------------
 
-    for followup in due_followups:
+# =========================================================
+# FOLLOW-UP MODEL
+# =========================================================
 
-        client = db.query(
-            Client
-        ).filter(
-            Client.id == followup.client_id
-        ).first()
+class FollowUp(Base):
 
-        # -------------------------------------------------
-        # UPDATE STATUS
-        # -------------------------------------------------
+    __tablename__ = "followups"
 
-        followup.status = "processed"
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
 
-        processed.append(
-            {
-                "followup_id": followup.id,
+    client_id = Column(
+        Integer,
+        ForeignKey("clients.id"),
+        nullable=False
+    )
 
-                "client_id": followup.client_id,
+    scheduled_at = Column(
+        DateTime,
+        nullable=False
+    )
 
-                "client_name": (
-                    client.name
-                    if client
-                    else None
-                ),
+    status = Column(
+        String,
+        default="scheduled"
+    )
 
-                "phone": (
-                    client.phone
-                    if client
-                    else None
-                ),
-
-                "product": (
-                    client.product
-                    if client
-                    else None
-                ),
-
-                "scheduled_at": (
-                    followup.scheduled_at
-                ),
-
-                "status": followup.status
-            }
-        )
-
-    # -----------------------------------------------------
-    # SAVE CHANGES
-    # -----------------------------------------------------
-
-    db.commit()
-
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
-
-    return {
-        "status": "success",
-
-        "processed_count": len(
-            processed
-        ),
-
-        "processed_followups": processed
-    }
+    client = relationship(
+        "Client",
+        back_populates="followups"
+    )
