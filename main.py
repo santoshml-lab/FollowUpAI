@@ -478,4 +478,96 @@ def process_followups(
 
         "processed_followups": processed
     }
+
+# =========================================================
+# TEST VOICE CALL - DRY RUN
+# =========================================================
+
+@app.post("/followups/{followup_id}/call-test")
+def test_voice_call(
+    followup_id: int,
+    db: Session = Depends(get_db)
+):
+
+    # -----------------------------------------------------
+    # FIND FOLLOW-UP
+    # -----------------------------------------------------
+
+    followup = db.query(
+        FollowUp
+    ).filter(
+        FollowUp.id == followup_id
+    ).first()
+
+    if not followup:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Follow-up not found."
+        )
+
+    # -----------------------------------------------------
+    # FIND CLIENT
+    # -----------------------------------------------------
+
+    client = db.query(
+        Client
+    ).filter(
+        Client.id == followup.client_id
+    ).first()
+
+    if not client:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found."
+        )
+
+    # -----------------------------------------------------
+    # GENERATE AI SCRIPT
+    # -----------------------------------------------------
+
+    try:
+
+        script = generate_followup_script(
+            client
+        )
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+    # -----------------------------------------------------
+    # DRY-RUN RESPONSE
+    # -----------------------------------------------------
+
+    return {
+
+        "status": "success",
+
+        "mode": "dry_run",
+
+        "message": (
+            "Voice call was NOT placed. "
+            "This is a test only."
+        ),
+
+        "call": {
+
+            "followup_id": followup.id,
+
+            "client_id": client.id,
+
+            "client_name": client.name,
+
+            "phone": client.phone,
+
+            "product": client.product,
+
+            "script": script
+        }
+    }
     
